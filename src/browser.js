@@ -30,13 +30,13 @@ export function displayLoading() {
 // Updates the specified properties of the badge.
 export function updateBadge(data) {
   if ('icon' in data)
-    chrome.browserAction.setIcon({ path: data.icon });
+    chrome.action.setIcon({ path: data.icon });
   if ('text' in data)
-    chrome.browserAction.setBadgeText({ text: data.text });
+    chrome.action.setBadgeText({ text: data.text });
   if ('title' in data)
-    chrome.browserAction.setTitle({ title: data.title });
+    chrome.action.setTitle({ title: data.title });
   if ('color' in data)
-    chrome.browserAction.setBadgeBackgroundColor({ color: data.color });
+    chrome.action.setBadgeBackgroundColor({ color: data.color });
 };
 
 // Returns the DOM element with the given id.
@@ -67,52 +67,46 @@ export class FetchError {
 }
 
 // Returns a promise that will resolve to the content of the given path.
-export function fetchUrl(path, params, headers) {
-  return new Promise(function(resolve, reject) {
-    var xhr = new XMLHttpRequest();
-    if (params) {
-      var separator = '?';
-      params.forEach(function(param) {
-        var key = encodeURIComponent(String(param[0]));
-        var val = encodeURIComponent(String(param[1]));
-        path += separator + key + '=' + val;
-        separator = '&';
-      });
-    }
-    xhr.open('GET', path, true);
-    if (headers) {
-      utils.Map.wrap(headers).forEach(function(key, value) {
-        xhr.setRequestHeader(key, value);
-      });
-    }
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState != 4)
-        return;
+export async function fetchUrl(path, params, headers) {
+  if (params) {
+    var separator = '?';
+    params.forEach(function(param) {
+      var key = encodeURIComponent(String(param[0]));
+      var val = encodeURIComponent(String(param[1]));
+      path += separator + key + '=' + val;
+      separator = '&';
+    });
+  }
 
-      if (xhr.status == 200) {
-        resolve(xhr.responseText);
-      } else if (xhr.statusText == 'OK') {
-        // The error message is in the response body. Those are likely
-        // auth-related issues, so add login prompt.
-        reject(new FetchError(xhr.responseText + config.LOGIN_PROMPT,
-          true));
-      } else if (xhr.status >= 400 && xhr.status <= 403) {
-        // Authentication error, offer login.
-        reject(
-          new FetchError("HTTP " + xhr.status + config.LOGIN_PROMPT,
-            true));
-      } else if (xhr.statusText == '' && xhr.status == 0) {
-        // No error text and a status of 0 usually indicate a missing
-        // cookie (e.g., a redirect to a sign-in service, which fails
-        // the request due to Chrome's CORS restrictions). Add login prompt.
-        reject(new FetchError('Unknown error.' + config.LOGIN_PROMPT,
-          true));
-      } else {
-        reject(new FetchError("HTTP " + xhr.status, false));
-      }
-    };
-    xhr.send(null);
-  });
+  var fetchHeaders = {};
+  if (headers) {
+    utils.Map.wrap(headers).forEach(function(key, value) {
+      fetchHeaders[key] = value;
+    });
+  }
+
+  var response;
+  try {
+    response = await fetch(path, {
+      headers: fetchHeaders,
+      credentials: 'include',
+    });
+  } catch (error) {
+    // Network errors (e.g., CORS failures, no connectivity).
+    throw new FetchError('Unknown error.' + config.LOGIN_PROMPT, true);
+  }
+
+  if (response.ok) {
+    return await response.text();
+  } else if (response.status >= 400 && response.status <= 403) {
+    throw new FetchError("HTTP " + response.status + config.LOGIN_PROMPT, true);
+  } else {
+    var body = await response.text().catch(() => '');
+    if (body) {
+      throw new FetchError(body + config.LOGIN_PROMPT, true);
+    }
+    throw new FetchError("HTTP " + response.status, false);
+  }
 };
 
 // Sends a browser message, returning a promise for the result.
@@ -126,8 +120,13 @@ export function addExtensionMessageListener(callback) {
 }
 
 // Schedules a thunk to be called when all content is loaded.
+// In a service worker context there is no DOM, so call immediately.
 export function callWhenLoaded(thunk) {
-  window.addEventListener('DOMContentLoaded', thunk);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('DOMContentLoaded', thunk);
+  } else {
+    thunk();
+  }
 };
 
 // Open a new tab displaying the given url, or activate the first

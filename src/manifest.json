@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
 
   "name": "Gerrit Monitor",
   "description": "Monitor your CLs on Gerrit",
@@ -17,14 +17,17 @@
   ],
 
   "optional_permissions": [
-    "notifications",
+    "notifications"
+  ],
+
+  "optional_host_permissions": [
     "http://*/",
     "https://*/"
   ],
 
   "options_page": "options.html",
 
-  "browser_action": {
+  "action": {
     "default_icon": {
       "24": "img/ic_assignment_black_24dp_1x.png",
       "48": "img/ic_assignment_black_24dp_2x.png"
@@ -34,7 +37,7 @@
   },
 
   "background": {
-    "page": "background.html",
-    "persistent": true
+    "service_worker": "background.js",
+    "type": "module"
   }
 }
