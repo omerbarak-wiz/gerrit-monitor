@@ -233,6 +233,36 @@ class ChangelistWidget {
   }
 }
 
+// Renders search results into the popup UI.
+function renderResults(wrapper) {
+  var hideOverlay = false;
+  if (wrapper.results !== undefined) {
+    var widget = PopupWidget.create(wrapper.results);
+    if (widget.getSections().length === 0) {
+      setOverlayText(messages.NO_CLS_MESSAGE + '.');
+      setElementVisibility('results', false);
+    } else {
+      // Clear previous results before rendering new ones.
+      browser.getElement('results').innerHTML = '';
+      widget.render(dombuilder.DomBuilder.attach(
+          browser.getElement('results')));
+      setElementVisibility('results', true);
+      hideOverlay = true;
+    }
+  }
+
+  if (wrapper.errors !== undefined) {
+    setLogginButtonVisible(
+      wrapper.errors[0].error.message,
+      wrapper.errors.map(function(error) {
+        return error.host;
+      }));
+    hideOverlay = false;
+  }
+
+  setOverlayVisible(!hideOverlay);
+}
+
 // Fetch data from the servers, then display the popup.
 function displayPopup() {
   // Update the badge to show a loading state.
@@ -243,30 +273,7 @@ function displayPopup() {
   // are no servers configured, so deal appropriately with the error.
   return getSearchResults()
     .then(function(wrapper) {
-      var hideOverlay = false;
-      if (wrapper.results !== undefined) {
-        var widget = PopupWidget.create(wrapper.results);
-        if (widget.getSections().length === 0) {
-          setOverlayText(messages.NO_CLS_MESSAGE + '.');
-          setElementVisibility('results', false);
-        } else {
-          widget.render(dombuilder.DomBuilder.attach(
-              browser.getElement('results')));
-          setElementVisibility('results', true);
-          hideOverlay = true;
-        }
-      }
-
-      if (wrapper.errors !== undefined) {
-        setLogginButtonVisible(
-          wrapper.errors[0].error.message,
-          wrapper.errors.map(function(error) {
-            return error.host;
-          }));
-        hideOverlay = false;
-      }
-
-      setOverlayVisible(!hideOverlay);
+      renderResults(wrapper);
     })
     .catch(function(error) {
       setGrantPermissionsButtonVisible(String(error));
@@ -358,8 +365,38 @@ function getSearchResults() {
   });
 };
 
+// Handle background refresh messages from the service worker.
+function onBackgroundUpdate(request, sender, reply) {
+  if (request[0] === 'updateResults') {
+    var freshWrapper = request[1];
+    browser.loadOptions().then(function(options) {
+      var results = undefined;
+      if (freshWrapper.results.length !== 0) {
+        results = new gerrit.SearchResults(freshWrapper.results.map(
+          function(result) {
+            return gerrit.SearchResult.wrap(
+              result.host, result.user, result.data, options);
+          }));
+      }
+
+      var errors = undefined;
+      if (freshWrapper.errors.length !== 0) {
+        errors = freshWrapper.errors.map(function(element) {
+          return {
+            host: element.host,
+            error: browser.FetchError.wrap(element.error),
+          };
+        });
+      }
+
+      renderResults({ results: results, errors: errors });
+    });
+  }
+}
+
 // Main method.
 function onLoaded() {
+  browser.addExtensionMessageListener(onBackgroundUpdate);
   displayPopup();
 };
 

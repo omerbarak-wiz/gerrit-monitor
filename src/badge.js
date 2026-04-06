@@ -21,6 +21,51 @@ import * as notifications from './notifications.js';
 // Variable used to cache the results of fetchReviews.
 var fetchCache = {};
 
+// Separate cache for account info (rarely changes).
+var accountCache = {};
+var ACCOUNT_CACHE_DURATION_IN_MILLISECONDS = 30 * 60 * 1000; // 30 minutes
+
+// Returns cached account info or fetches it.
+async function getCachedAccount(host) {
+  const now = new Date();
+  if (accountCache[host]) {
+    const [timestamp, account] = accountCache[host];
+    if (now - timestamp < ACCOUNT_CACHE_DURATION_IN_MILLISECONDS) {
+      return account;
+    }
+  }
+  const account = await gerrit.fetchAccount(host);
+  accountCache[host] = [new Date(), account];
+  return account;
+}
+
+// Returns stale cached results if available (even if expired).
+function getStaleCachedResults(hosts) {
+  let results = new Array();
+  let errors = new Array();
+  let hasAny = false;
+
+  for (const host of hosts) {
+    if (fetchCache[host]) {
+      hasAny = true;
+      const [timestamp, cached] = fetchCache[host];
+      if (cached.error) {
+        errors.push({ host: host, error: cached.error });
+      } else {
+        results.push(cached.reviews);
+      }
+    }
+  }
+
+  if (!hasAny) return null;
+
+  return {
+    results: new gerrit.SearchResults(results),
+    errors: errors,
+    stale: true,
+  };
+}
+
 // Fetches information about interesting CLs.
 async function fetchCls(hosts) {
   if (hosts.length === 0) {
@@ -28,6 +73,7 @@ async function fetchCls(hosts) {
   }
 
   const now = new Date();
+  const options = await browser.loadOptions();
 
   // Fetch results from all hosts in parallel.
   let results = new Array();
@@ -46,8 +92,8 @@ async function fetchCls(hosts) {
     }
 
     try {
-      const account = await gerrit.fetchAccount(host);
-      const reviews = await gerrit.fetchReviews(host, account);
+      const account = await getCachedAccount(host);
+      const reviews = await gerrit.fetchReviews(host, account, options);
       fetchCache[host] = [new Date(), {reviews: reviews}];
       results.push(reviews);
     } catch (error) {
@@ -159,9 +205,18 @@ function newMessageProxy(handler) {
 class RequestProxy {
   constructor() {}
 
-  // Returns the search results displayed in the popup. If no search
-  // results are saved, then cause the badge to refresh.
+  // Returns the search results displayed in the popup. If stale cached
+  // data is available, returns it immediately and refreshes in the
+  // background, sending an 'updateResults' message when done.
   getSearchResults(hosts) {
+    const stale = getStaleCachedResults(hosts);
+    if (stale) {
+      // Refresh in background; send updated results to popup when done.
+      fetchAndUpdate(hosts).then(function(freshResults) {
+        chrome.runtime.sendMessage(['updateResults', freshResults]);
+      }).catch(function() { /* popup may have closed */ });
+      return Promise.resolve(stale);
+    }
     return fetchAndUpdate(hosts);
   }
 }

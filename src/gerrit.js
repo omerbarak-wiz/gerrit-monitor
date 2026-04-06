@@ -629,7 +629,7 @@ export function fetchAccount(host) {
 };
 
 // Returns a promise with all reviews requiring attention.
-export function fetchReviews(host, account) {
+export function fetchReviews(host, account, options) {
   var params = [];
   var userid = account._account_id;
   params.push(['q', 'status:open attention:' + userid]);
@@ -649,11 +649,9 @@ export function fetchReviews(host, account) {
   return sendRequest(host, '/changes/', params)
     .then(parseJSON)
     .then(function(results) {
-    return browser.loadOptions().then(function(options) {
-        return Promise.resolve(SearchResult.wrap(
-            host, account, [].concat.apply([], results), options));
+      return SearchResult.wrap(
+          host, account, [].concat.apply([], results), options);
     });
-  });
 };
 
 // Returns a promise with a list of all host that are configured
