@@ -48,19 +48,9 @@ export const OPTION_UNSPECIFIED = 'unspecified';
 export const DEFAULT_OPTIONS = {
   // URL of the gerrit instance to monitor.
   instances: [{
-    name: 'Chromium',
-    host: 'https://chromium-review.googlesource.com',
-    enabled: false,
-  },
-  {
-    name: 'Fuchsia',
-    host: 'https://fuchsia-review.googlesource.com',
-    enabled: false,
-  },
-  {
-    name: 'AOSP',
-    host: 'https://android-review.googlesource.com',
-    enabled: false,
+    name: 'sensor',
+    host: 'https://gerrit.ops.wiz.io',
+    enabled: true,
   }],
 
   // Should notifications been shown?
