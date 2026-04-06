@@ -115,6 +115,9 @@ async function fetchAndUpdate(hosts) {
   // Update the badge.
   update(results);
 
+  // Persist results to storage so they survive service worker restarts.
+  await browser.setLocalStorage('cachedResults', JSON.parse(JSON.stringify(results)));
+
   // Send any notifications.
   await notifications.notify(results.results, results.errors);
 

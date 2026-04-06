@@ -263,14 +263,45 @@ function renderResults(wrapper) {
   setOverlayVisible(!hideOverlay);
 }
 
+// Wraps raw cached data from storage into proper result objects.
+function wrapCachedResults(cached, options) {
+  var results = undefined;
+  if (cached.results.length !== 0) {
+    results = new gerrit.SearchResults(cached.results.map(
+      function(result) {
+        return gerrit.SearchResult.wrap(
+          result.host, result.user, result.data, options);
+      }));
+  }
+
+  var errors = undefined;
+  if (cached.errors.length !== 0) {
+    errors = cached.errors.map(function(element) {
+      return {
+        host: element.host,
+        error: browser.FetchError.wrap(element.error),
+      };
+    });
+  }
+
+  return { results: results, errors: errors };
+}
+
 // Fetch data from the servers, then display the popup.
 function displayPopup() {
+  // Try to show persisted results immediately while refreshing.
+  browser.loadOptions().then(function(options) {
+    browser.getLocalStorage('cachedResults', null).then(function(cached) {
+      if (cached) {
+        renderResults(wrapCachedResults(cached, options));
+      }
+    });
+  });
+
   // Update the badge to show a loading state.
   browser.displayLoading();
 
-  // Fetch the data from the servers, and then display the popup. The
-  // promise returned by getSearchResults() is only rejected if there
-  // are no servers configured, so deal appropriately with the error.
+  // Fetch fresh data in the background. When it arrives, re-render.
   return getSearchResults()
     .then(function(wrapper) {
       renderResults(wrapper);
@@ -368,28 +399,8 @@ function getSearchResults() {
 // Handle background refresh messages from the service worker.
 function onBackgroundUpdate(request, sender, reply) {
   if (request[0] === 'updateResults') {
-    var freshWrapper = request[1];
     browser.loadOptions().then(function(options) {
-      var results = undefined;
-      if (freshWrapper.results.length !== 0) {
-        results = new gerrit.SearchResults(freshWrapper.results.map(
-          function(result) {
-            return gerrit.SearchResult.wrap(
-              result.host, result.user, result.data, options);
-          }));
-      }
-
-      var errors = undefined;
-      if (freshWrapper.errors.length !== 0) {
-        errors = freshWrapper.errors.map(function(element) {
-          return {
-            host: element.host,
-            error: browser.FetchError.wrap(element.error),
-          };
-        });
-      }
-
-      renderResults({ results: results, errors: errors });
+      renderResults(wrapCachedResults(request[1], options));
     });
   }
 }
